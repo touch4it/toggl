@@ -1,34 +1,35 @@
 # Responsible for syncing Toggl with Redmine
 class TogglTimeRegistrationService
-  
+
   def initialize(user, toggl_api_service)
     @user = user
     @toggl_api_service = toggl_api_service
   end
-  
+
   def sync
     latest_toggl_entries = @toggl_api_service.get_toggl_entries
     return if latest_toggl_entries.empty?
-    
+
     TogglTimeEntry.transaction do
       already_loaded_ids = TogglTimeEntry.with_ids(latest_toggl_entries.map(&:id)).map(&:id)
-    
+
       latest_toggl_entries.each do |toggl_entry|
-        next if already_loaded_ids.include?(toggl_entry.id)
+        next if already_loaded_ids.include?(toggl_entry.id) || toggl_entry.issue_id<1000
 
         if create_time_entry(@user, toggl_entry)
           TogglTimeEntry.register_synced_entry(toggl_entry.id)
+          @toggl_api_service.update_toggl_entry_tag toggl_entry.id
         end
       end
     end
   end
-  
+
 protected
 
   def create_time_entry(user, toggl_entry)
     issue = Issue.find_by_id(toggl_entry.issue_id)
     if issue
-      time_entry = TimeEntry.new(:project => issue.project, :issue => issue, :user => user, :spent_on => toggl_entry.started_at, :comments => toggl_entry.description)
+      time_entry = TimeEntry.new(:project => issue.project, :issue => issue, :user => user, :spent_on => toggl_entry.started_at, :comments => "toggl: "+toggl_entry.description)
       time_entry.hours = toggl_entry.duration
       if !time_entry.valid?
         puts "Creating time entry for issue ##{toggl_entry.issue_id} failed."
@@ -43,5 +44,5 @@ protected
       false
     end
   end
-  
+
 end
